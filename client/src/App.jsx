@@ -12,7 +12,7 @@ import PromptBox from './components/PromptBox';
 import PreviewPanel from './components/PreviewPanel';
 import { History, LayoutPanelLeft, Clock, Info, ShieldAlert } from 'lucide-react';
 
-const API_BASE = "http://localhost:5000";
+const API_BASE = "https://enclosureai.onrender.com";
 
 export default function App() {
     const [user, setUser] = useState(null);
