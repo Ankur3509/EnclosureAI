@@ -1,0 +1,18 @@
+services:
+  # Backend API with OpenSCAD (Docker)
+  - type: web
+    name: enclosureai-api
+    runtime: docker
+    rootDir: server
+    plan: free
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: GROQ_API_KEY
+        sync: false # Set this in the Render dashboard after deploying
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/health
+
+# Note: You can also define your static site here, 
+# but since you are using Netlify, we focus on the Backend.
