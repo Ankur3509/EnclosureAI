@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
 
-const { generateDesignPlan } = require("./geminiClient");
+const { generateDesignPlan } = require("./aiClient");
 const { generateSCAD } = require("./cadGenerator");
 const { getCredits, deductCredit } = require("./credits");
 
@@ -106,9 +106,12 @@ app.get("/api/credits/:userId", (req, res) => {
     res.json({ credits });
 });
 
+// In-memory session store for iterative design
+const designSessions = {};
+
 // Main generation endpoint
 app.post("/api/generate", async (req, res) => {
-    const { prompt, userId } = req.body;
+    const { prompt, userId, continueSession } = req.body;
 
     // ── Input validation ────────────────────────────────────────────────
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
@@ -126,19 +129,24 @@ app.post("/api/generate", async (req, res) => {
 
     // ── Pipeline ────────────────────────────────────────────────────────
     try {
-        console.log(`\n===== New Generation Request =====`);
-        console.log(`User: ${userId} | Credits: ${currentCredits}`);
-        console.log(`Prompt: "${prompt}"`);
+        const prevState = continueSession ? designSessions[userId] : null;
+        console.log(`\n===== ${prevState ? 'Iterative' : 'New'} Generation Request =====`);
+        console.log(`User: ${userId} | Prompt: "${prompt}"`);
 
-        // Step 1: AI → JSON design plan
+        // Step 1: AI → JSON design plan (passing prevState)
         console.log("[Step 1] Calling Gemini for design plan...");
-        const designPlan = await generateDesignPlan(prompt);
-        console.log("[Step 1] Design plan received:", JSON.stringify(designPlan, null, 2));
+        const designPlan = await generateDesignPlan(prompt, prevState);
+        console.log("[Step 1] Design plan updated:", JSON.stringify(designPlan, null, 2));
+
+        // Cache the session state
+        designSessions[userId] = designPlan;
 
         // Step 2: JSON → OpenSCAD code
         console.log("[Step 2] Generating OpenSCAD code...");
         const scadCode = generateSCAD(designPlan);
 
+        // STL Caching Logic: If the SCAD code is identical to a previous one, reuse the STL.
+        // For now, we'll just use a hash or look at the ID.
         const fileId = uuidv4();
         const scadPath = path.join(outputsDir, `${fileId}.scad`);
         const stlPath = path.join(outputsDir, `${fileId}.stl`);

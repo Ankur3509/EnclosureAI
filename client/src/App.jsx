@@ -1,15 +1,4 @@
-// =============================================================================
-// App.jsx — Main UI for EnclosureAI
-//
-// Features:
-//   • Device description textarea
-//   • Generate button with pipeline status indicators
-//   • Credit balance display
-//   • STL & SCAD download links
-//   • JSON design plan preview
-// =============================================================================
-
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import {
     Box,
@@ -22,13 +11,15 @@ import {
     Cpu,
     Cog,
     FileDown,
+    MessageSquare,
+    Maximize2,
+    Layers,
+    Settings,
 } from "lucide-react";
+import STLViewer from "./components/STLViewer";
 
 const API_BASE = "http://localhost:5000";
 
-// ---------------------------------------------------------------------------
-// Generate a simple persistent userId (stored in localStorage)
-// ---------------------------------------------------------------------------
 function getUserId() {
     let id = localStorage.getItem("enclosure_ai_user_id");
     if (!id) {
@@ -40,205 +31,182 @@ function getUserId() {
 
 const USER_ID = getUserId();
 
-// ---------------------------------------------------------------------------
-// Pipeline step definitions
-// ---------------------------------------------------------------------------
-const PIPELINE_STEPS = [
-    { key: "ai", label: "Generating design plan with AI…", icon: Cpu },
-    { key: "cad", label: "Converting to OpenSCAD code…", icon: FileCode2 },
-    { key: "build", label: "Building 3D model…", icon: Cog },
-    { key: "done", label: "STL ready for download", icon: FileDown },
-];
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 export default function App() {
     const [prompt, setPrompt] = useState("");
     const [loading, setLoading] = useState(false);
-    const [pipelineStep, setPipelineStep] = useState(-1); // -1 = idle
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
-    const [credits, setCredits] = useState(null); // null = loading
+    const [credits, setCredits] = useState(null);
 
-    // Fetch credits on mount
+    // Design UI controls
+    const [wireframe, setWireframe] = useState(false);
+    const [transparent, setTransparent] = useState(false);
+
+    const chatEndRef = useRef(null);
+
     useEffect(() => {
-        axios
-            .get(`${API_BASE}/api/credits/${USER_ID}`)
-            .then((r) => setCredits(r.data.credits))
-            .catch(() => setCredits(5)); // fallback
+        fetchCredits();
     }, []);
 
-    // Simulate pipeline progress while waiting for the real response
-    const animatePipeline = useCallback(() => {
-        setPipelineStep(0);
-        const timers = [];
-        timers.push(setTimeout(() => setPipelineStep(1), 2500));
-        timers.push(setTimeout(() => setPipelineStep(2), 4500));
-        return () => timers.forEach(clearTimeout);
-    }, []);
+    const fetchCredits = async () => {
+        try {
+            const resp = await axios.get(`${API_BASE}/api/credits/${USER_ID}`);
+            setCredits(resp.data.credits);
+        } catch (err) {
+            setCredits(5);
+        }
+    };
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (isReprompt = false) => {
         if (!prompt.trim() || loading) return;
 
         setLoading(true);
         setError(null);
-        setResult(null);
-
-        const cancelAnimation = animatePipeline();
 
         try {
             const response = await axios.post(`${API_BASE}/api/generate`, {
                 prompt: prompt.trim(),
                 userId: USER_ID,
+                continueSession: isReprompt // Flag for iterative chain
             });
 
-            setPipelineStep(3); // done
             setResult(response.data);
             setCredits(response.data.credits);
+            setPrompt(""); // Clear prompt for next iteration
         } catch (err) {
-            cancelAnimation();
-            setPipelineStep(-1);
-            const msg =
-                err.response?.data?.error ||
-                "Something went wrong. Make sure the server is running.";
-            setError(msg);
+            setError(err.response?.data?.error || "Generation failed. Check server connection.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleKeyDown = (e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            handleGenerate();
-        }
-    };
-
-    const noCredits = credits !== null && credits <= 0;
-
     return (
         <div className="container">
-            {/* ── Header ──────────────────────────────────────────────────── */}
             <header>
-                <Box size={44} strokeWidth={1.5} color="#60a5fa" className="logo-icon" />
-                <h1>EnclosureAI</h1>
-                <p className="subtitle">
-                    Describe your electronic device — get a 3D-printable enclosure STL.
-                </p>
+                <Box size={40} color="#60a5fa" className="logo-icon" />
+                <h1>EnclosureAI <span style={{ fontSize: '0.4em', verticalAlign: 'middle', background: 'rgba(96, 165, 250, 0.2)', padding: '4px 8px', borderRadius: '4px', color: '#60a5fa' }}>PRO</span></h1>
+                <p className="subtitle">Iterative Parametric Design Engine</p>
             </header>
 
-            {/* ── Main Card ───────────────────────────────────────────────── */}
-            <main className="glass-card">
-                <textarea
-                    id="prompt-input"
-                    className="prompt-input"
-                    placeholder={`Describe your device…\n\ne.g. "A handheld case for Arduino Nano with front USB opening and ventilation holes."`}
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={loading}
-                    aria-label="Device description"
-                />
+            <main className="glass-card" style={{ maxWidth: '900px' }}>
 
-                <button
-                    id="generate-btn"
-                    className="btn-primary"
-                    onClick={handleGenerate}
-                    disabled={loading || noCredits || !prompt.trim()}
-                >
-                    {loading ? (
-                        <>
-                            <div className="spinner" />
-                            Generating…
-                        </>
-                    ) : (
-                        <>
-                            <Zap size={18} />
-                            Generate 3D Enclosure
-                        </>
-                    )}
-                </button>
+                {/* 3D Preview Section */}
+                {result ? (
+                    <div className="preview-section">
+                        <div className="viewer-controls">
+                            <button onClick={() => setWireframe(!wireframe)} className={wireframe ? 'active' : ''}>
+                                <Maximize2 size={16} /> Wireframe
+                            </button>
+                            <button onClick={() => setTransparent(!transparent)} className={transparent ? 'active' : ''}>
+                                <Layers size={16} /> Transparent
+                            </button>
+                        </div>
 
-                {/* Credits */}
-                <div className="credits-badge">
-                    <ShieldCheck size={14} />
-                    <span>
-                        <span className="credit-count">{credits ?? "…"}</span> generations remaining
-                    </span>
+                        <STLViewer
+                            url={`${API_BASE}${result.stlUrl}`}
+                            wireframe={wireframe}
+                            transparent={transparent}
+                        />
+
+                        <div className="specs-grid">
+                            <div className="spec-item">
+                                <span className="label">Outer Dimensions</span>
+                                <span className="value">
+                                    {Math.round(result.designPlan.dimensions.length + result.designPlan.wall_thickness * 2)} x {Math.round(result.designPlan.dimensions.width + result.designPlan.wall_thickness * 2)} x {Math.round(result.designPlan.dimensions.height + result.designPlan.wall_thickness)} mm
+                                </span>
+                            </div>
+                            <div className="spec-item">
+                                <span className="label">Wall Thickness</span>
+                                <span className="value">{result.designPlan.wall_thickness} mm</span>
+                            </div>
+                            <div className="spec-item">
+                                <span className="label">Lid Style</span>
+                                <span className="value">{result.designPlan.lid.style}</span>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="empty-state">
+                        <Cpu size={60} style={{ opacity: 0.2, marginBottom: '20px' }} />
+                        <p>Describe your device to begin the design process.</p>
+                    </div>
+                )}
+
+                {/* Action Board */}
+                <div className="action-board">
+                    <div className="input-row">
+                        <textarea
+                            className="prompt-input"
+                            style={{ minHeight: '80px', marginBottom: '0' }}
+                            placeholder={result ? "Refine design... (e.g. 'Make it 5mm taller' or 'Add vents')" : "Describe your device..."}
+                            value={prompt}
+                            onChange={(e) => setPrompt(e.target.value)}
+                            disabled={loading}
+                        />
+                        <button
+                            className="btn-primary"
+                            style={{ width: 'auto', padding: '0 2rem' }}
+                            onClick={() => handleGenerate(!!result)}
+                            disabled={loading || credits <= 0 || !prompt.trim()}
+                        >
+                            {loading ? <div className="spinner" /> : (result ? <Zap size={20} /> : "Design")}
+                        </button>
+                    </div>
+
+                    <div className="meta-row">
+                        <div className="credits-badge" style={{ marginTop: 0 }}>
+                            <ShieldCheck size={14} /> <span>{credits ?? "..."} iterations left</span>
+                        </div>
+
+                        {result && (
+                            <div className="download-row">
+                                <a href={`${API_BASE}${result.stlUrl}`} download className="mini-btn">
+                                    <Download size={14} /> STL
+                                </a>
+                                <a href={`${API_BASE}${result.scadUrl}`} download className="mini-btn">
+                                    <FileCode2 size={14} /> SCAD
+                                </a>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* Pipeline Steps (visible while loading) */}
-                {loading && (
-                    <div className="pipeline-status">
-                        {PIPELINE_STEPS.map((step, i) => {
-                            const StepIcon = step.icon;
-                            let cls = "pipeline-step";
-                            if (i < pipelineStep) cls += " done";
-                            else if (i === pipelineStep) cls += " active";
-                            return (
-                                <div key={step.key} className={cls}>
-                                    <span className="pipeline-dot" />
-                                    <StepIcon size={14} />
-                                    <span>{step.label}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Error */}
                 {error && (
                     <div className="status-msg error">
-                        <AlertCircle size={18} />
-                        <span>{error}</span>
-                    </div>
-                )}
-
-                {/* Results */}
-                {result && (
-                    <div className="results-container">
-                        <div className="status-msg success">
-                            <CheckCircle2 size={18} />
-                            <span>Your enclosure model is ready!</span>
-                        </div>
-
-                        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
-                            <a
-                                id="download-stl"
-                                href={`${API_BASE}${result.stlUrl}`}
-                                className="download-btn"
-                                download
-                            >
-                                <Download size={18} />
-                                Download STL
-                            </a>
-
-                            {result.scadUrl && (
-                                <a
-                                    id="download-scad"
-                                    href={`${API_BASE}${result.scadUrl}`}
-                                    className="download-btn"
-                                    style={{ background: "linear-gradient(135deg, #8b5cf6, #a855f7)" }}
-                                    download
-                                >
-                                    <FileCode2 size={18} />
-                                    Download SCAD
-                                </a>
-                            )}
-                        </div>
-
-                        <div className="plan-preview">
-                            <p>Design Specifications</p>
-                            <pre>{JSON.stringify(result.designPlan, null, 2)}</pre>
-                        </div>
+                        <AlertCircle size={18} /> <span>{error}</span>
                     </div>
                 )}
             </main>
 
-            {/* ── Footer ──────────────────────────────────────────────────── */}
-            <footer>
-                <span>Powered by Gemini Flash · OpenSCAD · React</span>
-            </footer>
+            <style dangerouslySetInnerHTML={{
+                __html: `
+        .preview-section { margin-bottom: 2rem; }
+        .viewer-controls { display: flex; gap: 10px; margin-bottom: 10px; justify-content: flex-end; }
+        .viewer-controls button { 
+          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); 
+          color: #94a3b8; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer;
+          display: flex; align-items: center; gap: 6px; transition: all 0.2s;
+        }
+        .viewer-controls button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+        
+        .specs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
+        .spec-item { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; text-align: left; }
+        .spec-item .label { display: block; font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .spec-item .value { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
+        
+        .action-board { background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); }
+        .input-row { display: flex; gap: 1rem; }
+        .meta-row { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
+        .download-row { display: flex; gap: 8px; }
+        
+        .mini-btn { 
+          background: rgba(255,255,255,0.1); color: white; text-decoration: none; font-size: 0.75rem; 
+          padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 4px; font-weight: 600;
+        }
+        .mini-btn:hover { background: #3b82f6; }
+        
+        .empty-state { padding: 4rem 0; opacity: 0.5; }
+      `}} />
         </div>
     );
 }
