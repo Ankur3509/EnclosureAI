@@ -9,7 +9,8 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
+const uuidv4 = () => crypto.randomUUID();
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
