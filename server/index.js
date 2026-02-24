@@ -29,8 +29,8 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Ensure outputs directory exists
-const outputsDir = path.join(__dirname, "..", "outputs");
+// Ensure outputs directory exists (relative to server root)
+const outputsDir = path.join(__dirname, "outputs");
 if (!fs.existsSync(outputsDir)) {
     fs.mkdirSync(outputsDir, { recursive: true });
 }

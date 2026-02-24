@@ -1,6 +1,8 @@
 node_modules
 .env
-outputs/*.scad
-outputs/*.stl
-*.sqlite
+server/outputs/*.scad
+server/outputs/*.stl
+server/outputs/*.png
+*.sqlite*
 dist
+.DS_Store
