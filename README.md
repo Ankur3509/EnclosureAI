@@ -1,136 +1,85 @@
 # EnclosureAI 🚀
 
-**AI-powered conversion of device descriptions into 3D-printable enclosure STL files.**
+**The future of parametric enclosure design. Describe your device. Get your STL. Get printing.**
 
-```
-User text → Gemini AI → JSON design plan → OpenSCAD code → STL file → Download
-```
+EnclosureAI converts natural language into production-ready 3D printable enclosures using Llama 3.3 and OpenSCAD.
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
-|---------|-------------|
-| **AI Design Engine** | Gemini 2.0 Flash generates structured JSON design plans from natural language |
-| **Parametric CAD** | Fully parametric OpenSCAD code with accurate port cutouts, screw posts, vents, and lids |
-| **Port Library** | USB, USB-C, Micro USB, HDMI, Ethernet, audio jack, SD card cutout dimensions built-in |
-| **Credit System** | SQLite-based — 5 free generations per user |
-| **Modern UI** | Dark glassmorphism React interface with pipeline status indicators |
-| **Dual Download** | Download both `.stl` (for printing) and `.scad` (for editing in OpenSCAD) |
+- **Prompt-to-CAD**: Natural language interpretation of mechanical requirements.
+- **Iterative Chain**: Design through conversation—stable versioning across prompts.
+- **Interactive 3D Preview**: Full Three.js viewer with diagnostic wireframe & transparency modes.
+- **Engineering Accuracy**: Auto-calculated clearances, PCB standoffs, and lid tolerances.
+- **Pro Export**: Export and download both `.stl` (printing) and `.scad` (manual editing).
+- **Free Trial**: 5 free generations for new users via Firebase tracking.
 
 ---
 
-## 🛠️ Prerequisites
+## 🛠️ Tech Stack
 
-1. **[Node.js](https://nodejs.org/)** v18+
-2. **[OpenSCAD](https://openscad.org/downloads.html)** — install and **add to your system PATH**
-   - Verify: `openscad -v` should print a version number
-   - On Windows, the installer may not add it to PATH — you can manually add `C:\Program Files\OpenSCAD` to your system PATH
+### Frontend
+- **React + Vite**: High-performance UI core.
+- **Three.js + R3F**: Real-time 3D model rendering.
+- **Tailwind CSS**: Professional, utility-first styling.
+- **Framer Motion**: Smooth, high-fidelity animations.
+- **Firebase Auth**: Secure Google authentication.
+- **Firestore**: User metadata & trial tracking.
 
----
-
-## 🚀 Quick Start
-
-### 1. Backend
-
-```bash
-cd enclosure-ai/server
-npm install
-npm start
-```
-
-Server starts on `http://localhost:5000`.
-
-### 2. Frontend
-
-```bash
-cd enclosure-ai/client
-npm install
-npm run dev
-```
-
-Frontend starts on `http://localhost:5173`.
-
-### 3. Open in browser
-
-Go to **http://localhost:5173** and enter a device description.
+### Backend
+- **Node.js (Express)**: Unified API foundation.
+- **Groq API (Llama 3.3 70B)**: The "Mechanical Mind" reasoning engine.
+- **OpenSCAD CLI**: Precision CSG CAD compiler.
+- **SQLite**: Local session and credit management.
 
 ---
 
-## 🧪 Test Prompts
+## � Quick Start (Local Setup)
 
-Try these in the text box:
+### 1. Prerequisites
+- [Node.js](https://nodejs.org/) v18+
+- [OpenSCAD](https://openscad.org/) installed and added to **system PATH**.
 
-- *"A handheld case for Arduino Nano with front USB opening and ventilation holes."*
-- *"Desktop enclosure for Raspberry Pi 4 with side HDMI and power ports, top vents, and screw-on lid."*
-- *"Small wall-mount sensor box for ESP32 with one USB-C port on the back."*
-- *"Battery-powered GPS tracker case with front LED cutout and bottom vents."*
+### 2. Backend Config
+- Navigate to `/server`
+- `npm install`
+- Add your `GROQ_API_KEY` to `.env`.
+- `node index.js` (Server runs on port 5000).
 
----
-
-## 📂 Project Structure
-
-```
-enclosure-ai/
-├── server/
-│   ├── index.js           # Express API + pipeline orchestration
-│   ├── geminiClient.js    # Gemini API + JSON schema enforcement
-│   ├── cadGenerator.js    # JSON → OpenSCAD code generator
-│   ├── credits.js         # SQLite credit system
-│   └── .env               # API keys (not committed)
-├── client/
-│   ├── src/
-│   │   ├── App.jsx        # React UI
-│   │   ├── main.jsx       # Entry point
-│   │   └── index.css      # Design system
-│   ├── index.html
-│   └── vite.config.js
-└── outputs/               # Generated .scad and .stl files
-```
+### 3. Frontend Config
+- Navigate to `/client`
+- `npm install`
+- `npm run dev` (Frontend runs on port 5173).
 
 ---
 
-## ⚙️ Architecture
+## 🏗️ Architecture
 
-```
-User Prompt
-    ↓
-Express API (/api/generate)
-    ↓
-Gemini 2.0 Flash (structured JSON output with schema enforcement)
-    ↓
-cadGenerator.js (JSON → parametric OpenSCAD code)
-    ↓
-OpenSCAD CLI (openscad design.scad -o output.stl)
-    ↓
-STL file served via Express static
-    ↓
-React frontend download link
-```
+1. **Input**: User signs in via Google and submits a prompt.
+2. **Reasoning**: AI interprets the description into a **Parametric Design Specification (JSON)**.
+3. **Generation**: `cadGenerator.js` converts JSON to a modular, variables-based OpenSCAD script.
+4. **Compilation**: OpenSCAD CLI compiles the script into a binary STL file.
+5. **Preview**: Three.js renders the STL on a GPU-accelerated canvas for inspection.
+6. **Download**: User downloads assets directly from the workspace.
 
 ---
 
-## 🔑 Environment Variables
+## 🏁 Deployment
 
-| Variable | Description |
-|----------|-------------|
-| `GEMINI_API_KEY` | Google Gemini API key |
-| `PORT` | Server port (default: 5000) |
-
----
-
-## 📐 CAD Generation Rules
-
-- **Minimum wall thickness**: 2mm
-- **Clearance**: 0.5mm between lid and box
-- **Screw posts**: 4mm radius, M3 pilot holes (1.5mm)
-- **Lid screw holes**: 1.8mm (clearance fit)
-- **Vent slots**: 2mm width, 4mm spacing
-- **Port dimensions**: Accurate to real connector specs
+- **Frontend**: [Netlify](https://www.netlify.com/) (Connected to `main` branch).
+- **Backend**: [Render](https://render.com/) (Connected to `main` branch).
+- **Database**: Firebase (Auth & Trial status).
 
 ---
 
-## 📄 License
+## 📐 Engineering Specs
 
-MIT
+- **Min Wall Thickness**: 2.0mm
+- **Print Tolerance (Lid)**: 0.4mm
+- **Board Clearances**: 1.0mm (standard)
+- **Standoff Radius**: 3.5mm
+
+---
+
+Built with ❤️ for the maker community.

@@ -1,212 +1,185 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import axios from "axios";
-import {
-    Box,
-    Download,
-    Zap,
-    ShieldCheck,
-    AlertCircle,
-    CheckCircle2,
-    FileCode2,
-    Cpu,
-    Cog,
-    FileDown,
-    MessageSquare,
-    Maximize2,
-    Layers,
-    Settings,
-} from "lucide-react";
-import STLViewer from "./components/STLViewer";
+import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
+import { auth, loginWithGoogle, getUserTrialStatus, incrementPromptCount } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+
+// Components
+import Navbar from './components/Navbar';
+import AnimatedBackground from './components/AnimatedBackground';
+import LandingPage from './components/LandingPage';
+import PromptBox from './components/PromptBox';
+import PreviewPanel from './components/PreviewPanel';
+import { History, LayoutPanelLeft, Clock, Info, ShieldAlert } from 'lucide-react';
 
 const API_BASE = "http://localhost:5000";
 
-function getUserId() {
-    let id = localStorage.getItem("enclosure_ai_user_id");
-    if (!id) {
-        id = "user_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        localStorage.setItem("enclosure_ai_user_id", id);
-    }
-    return id;
-}
-
-const USER_ID = getUserId();
-
 export default function App() {
-    const [prompt, setPrompt] = useState("");
+    const [user, setUser] = useState(null);
+    const [view, setView] = useState('landing'); // 'landing' or 'workspace'
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
-    const [credits, setCredits] = useState(null);
+    const [trialData, setTrialData] = useState({ promptsUsed: 0 });
+    const [history, setHistory] = useState([]);
+    const [pipelineStep, setPipelineStep] = useState(0); // 0: idle, 1: reasoning, 2: cad, 3: stl
 
-    // Design UI controls
-    const [wireframe, setWireframe] = useState(false);
-    const [transparent, setTransparent] = useState(false);
-
-    const chatEndRef = useRef(null);
-
+    // Auth Listener
     useEffect(() => {
-        fetchCredits();
+        const unsub = onAuthStateChanged(auth, async (u) => {
+            setUser(u);
+            if (u) {
+                const data = await getUserTrialStatus(u.email);
+                setTrialData(data);
+                setView('workspace'); // Auto-switch to workspace on login
+            } else {
+                setView('landing');
+            }
+        });
+        return unsub;
     }, []);
 
-    const fetchCredits = async () => {
-        try {
-            const resp = await axios.get(`${API_BASE}/api/credits/${USER_ID}`);
-            setCredits(resp.data.credits);
-        } catch (err) {
-            setCredits(5);
+    const handleGenerate = async (prompt) => {
+        if (!user) {
+            setError("Please sign in to generate designs.");
+            return;
         }
-    };
 
-    const handleGenerate = async (isReprompt = false) => {
-        if (!prompt.trim() || loading) return;
+        if (trialData.promptsUsed >= 5) {
+            setError("Free trial limit reached (5 generations). More prompts coming soon.");
+            return;
+        }
 
         setLoading(true);
         setError(null);
+        setPipelineStep(1);
 
         try {
+            // Simulated pipeline steps for UI feedback
+            setTimeout(() => setPipelineStep(2), 2000);
+            setTimeout(() => setPipelineStep(3), 4500);
+
             const response = await axios.post(`${API_BASE}/api/generate`, {
-                prompt: prompt.trim(),
-                userId: USER_ID,
-                continueSession: isReprompt // Flag for iterative chain
+                prompt,
+                userId: user.email,
+                continueSession: !!result
             });
 
             setResult(response.data);
-            setCredits(response.data.credits);
-            setPrompt(""); // Clear prompt for next iteration
+            // Update trial count in Firestore and local state
+            await incrementPromptCount(user.email);
+            setTrialData(prev => ({ ...prev, promptsUsed: prev.promptsUsed + 1 }));
+
+            // Add to history
+            setHistory(prev => [{ prompt, date: new Date().toLocaleTimeString() }, ...prev]);
         } catch (err) {
-            setError(err.response?.data?.error || "Generation failed. Check server connection.");
+            setError(err.response?.data?.error || "Pipeline failure. Check API status.");
         } finally {
             setLoading(false);
+            setPipelineStep(0);
         }
     };
 
     return (
-        <div className="container">
-            <header>
-                <Box size={40} color="#60a5fa" className="logo-icon" />
-                <h1>EnclosureAI <span style={{ fontSize: '0.4em', verticalAlign: 'middle', background: 'rgba(96, 165, 250, 0.2)', padding: '4px 8px', borderRadius: '4px', color: '#60a5fa' }}>PRO</span></h1>
-                <p className="subtitle">Iterative Parametric Design Engine</p>
-            </header>
+        <div className="min-h-screen font-sans">
+            <AnimatedBackground />
+            <Navbar user={user} onLogoClick={() => setView('landing')} />
 
-            <main className="glass-card" style={{ maxWidth: '900px' }}>
-
-                {/* 3D Preview Section */}
-                {result ? (
-                    <div className="preview-section">
-                        <div className="viewer-controls">
-                            <button onClick={() => setWireframe(!wireframe)} className={wireframe ? 'active' : ''}>
-                                <Maximize2 size={16} /> Wireframe
-                            </button>
-                            <button onClick={() => setTransparent(!transparent)} className={transparent ? 'active' : ''}>
-                                <Layers size={16} /> Transparent
-                            </button>
-                        </div>
-
-                        <STLViewer
-                            url={`${API_BASE}${result.stlUrl}`}
-                            wireframe={wireframe}
-                            transparent={transparent}
-                        />
-
-                        <div className="specs-grid">
-                            <div className="spec-item">
-                                <span className="label">Outer Dimensions</span>
-                                <span className="value">
-                                    {Math.round(result.designPlan.dimensions.length + result.designPlan.wall_thickness * 2)} x {Math.round(result.designPlan.dimensions.width + result.designPlan.wall_thickness * 2)} x {Math.round(result.designPlan.dimensions.height + result.designPlan.wall_thickness)} mm
-                                </span>
-                            </div>
-                            <div className="spec-item">
-                                <span className="label">Wall Thickness</span>
-                                <span className="value">{result.designPlan.wall_thickness} mm</span>
-                            </div>
-                            <div className="spec-item">
-                                <span className="label">Lid Style</span>
-                                <span className="value">{result.designPlan.lid.style}</span>
-                            </div>
-                        </div>
-                    </div>
+            <AnimatePresence mode="wait">
+                {view === 'landing' ? (
+                    <motion.div
+                        key="landing"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <LandingPage onGetStarted={() => user ? setView('workspace') : loginWithGoogle()} />
+                    </motion.div>
                 ) : (
-                    <div className="empty-state">
-                        <Cpu size={60} style={{ opacity: 0.2, marginBottom: '20px' }} />
-                        <p>Describe your device to begin the design process.</p>
-                    </div>
-                )}
+                    <motion.div
+                        key="workspace"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex h-[calc(100vh-80px)] mt-20 px-8 pb-8 gap-8 overflow-hidden"
+                    >
+                        {/* Left Sidebar - History */}
+                        <div className="w-64 hidden lg:flex flex-col glass-panel overflow-hidden">
+                            <div className="p-5 border-b border-white/5 flex items-center gap-2 font-bold text-xs uppercase tracking-widest text-slate-500">
+                                <Clock size={14} /> History
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                {history.length === 0 ? (
+                                    <div className="text-center py-10 text-slate-600 italic text-xs">No generations yet</div>
+                                ) : (
+                                    history.map((h, i) => (
+                                        <div key={i} className="p-3 bg-white/[0.03] rounded-xl border border-white/5 hover:bg-white/5 cursor-pointer transition-colors group">
+                                            <p className="text-xs text-white line-clamp-2 mb-1">{h.prompt}</p>
+                                            <span className="text-[10px] text-slate-500">{h.date}</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
 
-                {/* Action Board */}
-                <div className="action-board">
-                    <div className="input-row">
-                        <textarea
-                            className="prompt-input"
-                            style={{ minHeight: '80px', marginBottom: '0' }}
-                            placeholder={result ? "Refine design... (e.g. 'Make it 5mm taller' or 'Add vents')" : "Describe your device..."}
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            disabled={loading}
-                        />
-                        <button
-                            className="btn-primary"
-                            style={{ width: 'auto', padding: '0 2rem' }}
-                            onClick={() => handleGenerate(!!result)}
-                            disabled={loading || credits <= 0 || !prompt.trim()}
-                        >
-                            {loading ? <div className="spinner" /> : (result ? <Zap size={20} /> : "Design")}
-                        </button>
-                    </div>
-
-                    <div className="meta-row">
-                        <div className="credits-badge" style={{ marginTop: 0 }}>
-                            <ShieldCheck size={14} /> <span>{credits ?? "..."} iterations left</span>
+                            <div className="p-4 border-t border-white/5 bg-white/[0.02]">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Free Trial</span>
+                                    <span className="text-xs text-brand-blue font-bold">{trialData.promptsUsed}/5</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${(trialData.promptsUsed / 5) * 100}%` }}
+                                        className="h-full bg-brand-blue"
+                                    />
+                                </div>
+                            </div>
                         </div>
 
-                        {result && (
-                            <div className="download-row">
-                                <a href={`${API_BASE}${result.stlUrl}`} download className="mini-btn">
-                                    <Download size={14} /> STL
-                                </a>
-                                <a href={`${API_BASE}${result.scadUrl}`} download className="mini-btn">
-                                    <FileCode2 size={14} /> SCAD
-                                </a>
+                        {/* Center - Main Workspace */}
+                        <div className="flex-1 flex flex-col items-center justify-center relative">
+                            <div className="w-full max-w-4xl space-y-8 pb-20">
+                                <div className="text-center space-y-4">
+                                    <h2 className="text-4xl font-black font-display text-white">
+                                        {result ? "Refining Design" : "New Creation"}
+                                    </h2>
+                                    <p className="text-slate-500 text-sm italic">"A snap-fit box for a 9V battery with top vent slits"</p>
+                                </div>
+
+                                <PromptBox
+                                    onSend={handleGenerate}
+                                    loading={loading}
+                                    pipelineStep={pipelineStep}
+                                    disabled={trialData.promptsUsed >= 5}
+                                />
+
+                                {error && (
+                                    <motion.div
+                                        initial={{ scale: 0.9, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm mx-auto max-w-lg"
+                                    >
+                                        <ShieldAlert className="shrink-0" />
+                                        <span>{error}</span>
+                                    </motion.div>
+                                )}
                             </div>
-                        )}
-                    </div>
-                </div>
+                        </div>
 
-                {error && (
-                    <div className="status-msg error">
-                        <AlertCircle size={18} /> <span>{error}</span>
-                    </div>
+                        {/* Right Panel - Preview */}
+                        <div className="w-[450px] hidden xl:block">
+                            <PreviewPanel
+                                result={result}
+                                stlUrl={result ? `${API_BASE}${result.stlUrl}` : null}
+                                scadUrl={result ? `${API_BASE}${result.scadUrl}` : null}
+                            />
+                        </div>
+                    </motion.div>
                 )}
-            </main>
+            </AnimatePresence>
 
-            <style dangerouslySetInnerHTML={{
-                __html: `
-        .preview-section { margin-bottom: 2rem; }
-        .viewer-controls { display: flex; gap: 10px; margin-bottom: 10px; justify-content: flex-end; }
-        .viewer-controls button { 
-          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); 
-          color: #94a3b8; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer;
-          display: flex; align-items: center; gap: 6px; transition: all 0.2s;
-        }
-        .viewer-controls button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
-        
-        .specs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
-        .spec-item { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; text-align: left; }
-        .spec-item .label { display: block; font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .spec-item .value { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
-        
-        .action-board { background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .input-row { display: flex; gap: 1rem; }
-        .meta-row { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
-        .download-row { display: flex; gap: 8px; }
-        
-        .mini-btn { 
-          background: rgba(255,255,255,0.1); color: white; text-decoration: none; font-size: 0.75rem; 
-          padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 4px; font-weight: 600;
-        }
-        .mini-btn:hover { background: #3b82f6; }
-        
-        .empty-state { padding: 4rem 0; opacity: 0.5; }
-      `}} />
+            <footer className="fixed bottom-6 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest font-bold text-slate-600 pointer-events-none">
+                &copy; 2026 Enclosure AI &bull; Built for Engineers
+            </footer>
         </div>
     );
 }
